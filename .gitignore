@@ -1,0 +1,48 @@
+# Node
+node_modules/
+pnpm-lock.yaml
+package-lock.json
+yarn.lock
+
+# Build output
+dist/
+build/
+release/
+
+# Temporary work dirs
+.work/
+tmp/
+cache/
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# System files
+.DS_Store
+Thumbs.db
+
+# IDE configs
+.idea/
+.vscode/
+
+# Android / Capacitor
+android/
+ios/
+*.keystore
+*.jks
+
+# Generated installers
+*.apk
+*.deb
+*.exe
+*.zip
+*.tar.gz
+
+# Env
+.env
+.env.local
+

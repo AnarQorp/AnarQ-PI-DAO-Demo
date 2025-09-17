@@ -1,0 +1,50 @@
+name: demo-ci
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+jobs:
+  build-pwa:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node & pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@9 --activate
+          node --version
+          pnpm --version
+
+      - name: Bootstrap core
+        run: |
+          bash bootstrap/fetch-core-demo.sh main
+
+      - name: Install core dependencies
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+        run: |
+          pnpm -C .work/core install
+
+      - name: Build Qsocial (PWA)
+        run: |
+          pnpm -C .work/core/apps/qsocial build
+          mkdir -p dist
+          cp -r .work/core/apps/qsocial/dist/* dist/
+
+      - name: Upload PWA artifact (zip)
+        run: |
+          mkdir -p artifacts
+          (cd dist && zip -r ../artifacts/qsocial-pwa.zip .)
+        shell: bash
+
+      - name: Save artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: qsocial-pwa
+          path: artifacts/qsocial-pwa.zip
+
