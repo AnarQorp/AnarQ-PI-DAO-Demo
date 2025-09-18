@@ -28,7 +28,8 @@ jobs:
         shell: bash
         run: |
           bash bootstrap/fetch-core-demo.sh main
-          ls -la .work || true
+          echo "Contents of .work/core (depth 2):"
+          find .work/core -maxdepth 2 -type d
 
       - name: Install core dependencies
         shell: bash
@@ -42,21 +43,44 @@ jobs:
         shell: bash
         run: |
           set -e
-          # Find a package.json whose "name" contains qsocial (case-insensitive)
-          QSOCIAL_DIR="$(grep -Rsil '"name".*qsocial' .work/core/**/package.json | head -n1 | xargs dirname)"
-          echo "QSOCIAL_DIR=$QSOCIAL_DIR"
+          echo "Scanning for qsocial package.json under .work/core ..."
+          QSOCIAL_DIR=""
+          while IFS= read -r f; do
+            if grep -qi '"name"[^"]*qsocial' "$f"; then
+              QSOCIAL_DIR="$(dirname "$f")"
+              break
+            fi
+          done < <(find .work/core -type f -name package.json)
+
           if [ -z "$QSOCIAL_DIR" ] || [ ! -d "$QSOCIAL_DIR" ]; then
-            echo "Could not locate Qsocial in the core repo."
-            exit 1
+            echo "Could not locate Qsocial by scanning package.json files."
+            echo "Dumping top-level structure for debugging:"
+            find .work/core -maxdepth 3 -type d | sed 's#^#  #g' | head -n 200
+          else
+            echo "QSOCIAL_DIR=$QSOCIAL_DIR" | tee -a "$GITHUB_ENV"
           fi
-          echo "QSOCIAL_DIR=$QSOCIAL_DIR" >> "$GITHUB_ENV"
 
       - name: Build Qsocial (PWA)
         shell: bash
         run: |
-          pnpm -C "$QSOCIAL_DIR" build || pnpm -C "$QSOCIAL_DIR" vite build
-          mkdir -p dist
-          cp -r "$QSOCIAL_DIR"/dist/* dist/
+          set -e
+          if [ -n "${QSOCIAL_DIR:-}" ] && [ -d "$QSOCIAL_DIR" ]; then
+            echo "Building at $QSOCIAL_DIR"
+            pnpm -C "$QSOCIAL_DIR" build || pnpm -C "$QSOCIAL_DIR" vite build
+            mkdir -p dist
+            cp -r "$QSOCIAL_DIR"/dist/* dist/
+          else
+            echo "Fallback: using pnpm filter '*qsocial*' from core root"
+            pnpm -C .work/core -r --filter "*qsocial*" build
+            FOUND_DIST="$(find .work/core -type d -path "*/dist" -maxdepth 6 | head -n1 || true)"
+            if [ -z "$FOUND_DIST" ]; then
+              echo "No dist found after fallback build"
+              exit 1
+            fi
+            echo "Using dist at $FOUND_DIST"
+            mkdir -p dist
+            cp -r "$FOUND_DIST"/* dist/
+          fi
 
       - name: Upload PWA artifact (zip)
         shell: bash
