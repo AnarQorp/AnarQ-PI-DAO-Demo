@@ -13,34 +13,56 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Setup Node & pnpm
-        run: |
-          corepack enable
-          corepack prepare pnpm@9 --activate
-          node --version
-          pnpm --version
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+          run_install: false
 
       - name: Bootstrap core
+        shell: bash
         run: |
           bash bootstrap/fetch-core-demo.sh main
+          ls -la .work || true
 
       - name: Install core dependencies
+        shell: bash
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
         run: |
           pnpm -C .work/core install
 
-      - name: Build Qsocial (PWA)
+      - name: Locate Qsocial package
+        id: locate
+        shell: bash
         run: |
-          pnpm -C .work/core/apps/qsocial build
+          set -e
+          # Find a package.json whose "name" contains qsocial (case-insensitive)
+          QSOCIAL_DIR="$(grep -Rsil '"name".*qsocial' .work/core/**/package.json | head -n1 | xargs dirname)"
+          echo "QSOCIAL_DIR=$QSOCIAL_DIR"
+          if [ -z "$QSOCIAL_DIR" ] || [ ! -d "$QSOCIAL_DIR" ]; then
+            echo "Could not locate Qsocial in the core repo."
+            exit 1
+          fi
+          echo "QSOCIAL_DIR=$QSOCIAL_DIR" >> "$GITHUB_ENV"
+
+      - name: Build Qsocial (PWA)
+        shell: bash
+        run: |
+          pnpm -C "$QSOCIAL_DIR" build || pnpm -C "$QSOCIAL_DIR" vite build
           mkdir -p dist
-          cp -r .work/core/apps/qsocial/dist/* dist/
+          cp -r "$QSOCIAL_DIR"/dist/* dist/
 
       - name: Upload PWA artifact (zip)
+        shell: bash
         run: |
           mkdir -p artifacts
           (cd dist && zip -r ../artifacts/qsocial-pwa.zip .)
-        shell: bash
 
       - name: Save artifact
         uses: actions/upload-artifact@v4
