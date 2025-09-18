@@ -7,7 +7,7 @@ on:
     branches: ["**"]
 
 jobs:
-  build-pwa:
+  build-or-bundle:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
@@ -27,70 +27,70 @@ jobs:
       - name: Bootstrap core
         shell: bash
         run: |
+          set -e
           bash bootstrap/fetch-core-demo.sh main
-          echo "Contents of .work/core (depth 2):"
-          find .work/core -maxdepth 2 -type d
+          echo "Core tree (depth 3):"
+          find .work/core -maxdepth 3 -type d | sed 's#^#  #'
 
       - name: Install core dependencies
         shell: bash
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
         run: |
-          pnpm -C .work/core install
+          pnpm -C .work/core install || true
 
-      - name: Locate Qsocial package
-        id: locate
+      - name: Try to build a Vite UI if present
+        id: build
         shell: bash
         run: |
           set -e
-          echo "Scanning for qsocial package.json under .work/core ..."
-          QSOCIAL_DIR=""
-          while IFS= read -r f; do
-            if grep -qi '"name"[^"]*qsocial' "$f"; then
-              QSOCIAL_DIR="$(dirname "$f")"
-              break
+          mkdir -p dist
+          VITE_DIR="$(find .work/core -type f -name 'vite.config.*' -printf '%h\n' | head -n1 || true)"
+          if [ -n "$VITE_DIR" ] && [ -d "$VITE_DIR" ]; then
+            echo "Building Vite project at $VITE_DIR"
+            pnpm -C "$VITE_DIR" install || true
+            pnpm -C "$VITE_DIR" build || pnpm -C "$VITE_DIR" vite build
+            FOUND_DIST="$(find "$VITE_DIR" -type d -name dist -maxdepth 4 | head -n1 || true)"
+            if [ -n "$FOUND_DIST" ]; then
+              cp -r "$FOUND_DIST"/* dist/
+              echo "mode=pwa" >> "$GITHUB_OUTPUT"
+              exit 0
             fi
-          done < <(find .work/core -type f -name package.json)
-
-          if [ -z "$QSOCIAL_DIR" ] || [ ! -d "$QSOCIAL_DIR" ]; then
-            echo "Could not locate Qsocial by scanning package.json files."
-            echo "Dumping top-level structure for debugging:"
-            find .work/core -maxdepth 3 -type d | sed 's#^#  #g' | head -n 200
-          else
-            echo "QSOCIAL_DIR=$QSOCIAL_DIR" | tee -a "$GITHUB_ENV"
           fi
+          echo "No Vite UI found. Will package demo installers."
+          echo "mode=bundle" >> "$GITHUB_OUTPUT"
 
-      - name: Build Qsocial (PWA)
+      - name: Package demo installers (bundle)
+        if: steps.build.outputs.mode == 'bundle'
         shell: bash
         run: |
           set -e
-          if [ -n "${QSOCIAL_DIR:-}" ] && [ -d "$QSOCIAL_DIR" ]; then
-            echo "Building at $QSOCIAL_DIR"
-            pnpm -C "$QSOCIAL_DIR" build || pnpm -C "$QSOCIAL_DIR" vite build
-            mkdir -p dist
-            cp -r "$QSOCIAL_DIR"/dist/* dist/
-          else
-            echo "Fallback: using pnpm filter '*qsocial*' from core root"
-            pnpm -C .work/core -r --filter "*qsocial*" build
-            FOUND_DIST="$(find .work/core -type d -path "*/dist" -maxdepth 6 | head -n1 || true)"
-            if [ -z "$FOUND_DIST" ]; then
-              echo "No dist found after fallback build"
-              exit 1
-            fi
-            echo "Using dist at $FOUND_DIST"
-            mkdir -p dist
-            cp -r "$FOUND_DIST"/* dist/
-          fi
-
-      - name: Upload PWA artifact (zip)
-        shell: bash
-        run: |
           mkdir -p artifacts
-          (cd dist && zip -r ../artifacts/qsocial-pwa.zip .)
+          BUNDLE="$(find .work/core -maxdepth 1 -type d -iname 'anarqq-ecosystem-demo-*' | head -n1 || true)"
+          if [ -n "$BUNDLE" ]; then
+            (cd "$BUNDLE" && zip -r "$GITHUB_WORKSPACE/artifacts/anarqq-ecosystem-demo.zip" .)
+          else
+            # fallback: si ya existe el zip en raíz del core, cópialo
+            EXISTING="$(ls .work/core/anarqq-ecosystem-demo-installers-*.zip 2>/dev/null | head -n1 || true)"
+            if [ -n "$EXISTING" ]; then
+              mkdir -p artifacts
+              cp "$EXISTING" artifacts/anarqq-ecosystem-demo.zip
+            else
+              echo "No demo bundle found."; exit 1
+            fi
+          fi
 
-      - name: Save artifact
+      - name: Upload PWA artifact
+        if: steps.build.outputs.mode == 'pwa'
         uses: actions/upload-artifact@v4
         with:
           name: qsocial-pwa
-          path: artifacts/qsocial-pwa.zip
+          path: dist
+
+      - name: Upload demo bundle
+        if: steps.build.outputs.mode == 'bundle'
+        uses: actions/upload-artifact@v4
+        with:
+          name: anarqq-ecosystem-demo
+          path: artifacts/anarqq-ecosystem-demo.zip
 

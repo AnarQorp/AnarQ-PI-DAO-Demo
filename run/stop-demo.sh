@@ -1,19 +1,28 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "[*] Stopping AnarQ demo processes..."
+WORK_DIR="${WORK_DIR:-.work}"
 
-# Kill vite/dev servers running on port 4173 (Qsocial)
-if lsof -ti:4173 >/dev/null 2>&1; then
-  lsof -ti:4173 | xargs kill -9 || true
-  echo "  [+] Stopped process on port 4173"
+echo "[*] Stopping demo..."
+
+# Stop orchestrator
+if [[ -f "$WORK_DIR/orchestrator.pid" ]]; then
+  kill "$(cat "$WORK_DIR/orchestrator.pid")" 2>/dev/null || true
+  rm -f "$WORK_DIR/orchestrator.pid"
+  echo "  [+] Orchestrator stopped"
 fi
 
-# Kill pnpm dev processes
-pkill -f "pnpm.*dev" >/dev/null 2>&1 && echo "  [+] Stopped pnpm dev" || true
+# Stop vite preview
+if [[ -f "$WORK_DIR/vite-preview.pid" ]]; then
+  kill "$(cat "$WORK_DIR/vite-preview.pid")" 2>/dev/null || true
+  rm -f "$WORK_DIR/vite-preview.pid"
+  echo "  [+] Vite preview stopped"
+fi
 
-# Kill node processes running dist/server (production build)
-pkill -f "node.*dist" >/dev/null 2>&1 && echo "  [+] Stopped node server" || true
+# Kill any leftover on 4173
+if lsof -ti:4173 >/dev/null 2>&1; then
+  lsof -ti:4173 | xargs kill -9 || true
+fi
 
-echo "[*] Done. Demo stopped."
+echo "✅ Done."
 
