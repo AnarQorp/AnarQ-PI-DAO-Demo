@@ -46,3 +46,6 @@ ios/
 .env
 .env.local
 
+
+# Kiro IDE
+.kiro/

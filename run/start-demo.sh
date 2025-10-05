@@ -31,7 +31,25 @@ else
   echo "[!] No install-anarqq-demo.sh found (OK)."
 fi
 
-# 2) Arrancar orquestador si existe
+# 2) Arrancar backend
+if [[ -f "$CORE_DIR/backend/package.json" ]]; then
+  echo "[*] Starting backend server..."
+  # Install backend dependencies if needed
+  if [[ ! -d "$CORE_DIR/backend/node_modules" ]]; then
+    echo "  [+] Installing backend dependencies..."
+    pnpm -C "$CORE_DIR/backend" install
+  fi
+  
+  # Start backend server
+  ( cd "$CORE_DIR/backend" && pnpm start ) >"$LOG_DIR/backend.log" 2>&1 &
+  echo $! > "$WORK_DIR/backend.pid"
+  echo "  [+] Backend pid $(cat "$WORK_DIR/backend.pid")"
+  echo "  [+] Backend running on http://localhost:3001"
+else
+  echo "[!] Backend package.json not found; continuing anyway."
+fi
+
+# 3) Arrancar orquestador si existe
 if [[ -x "$CORE_DIR/demo-orchestrator/start.sh" ]]; then
   echo "[*] Starting demo orchestrator..."
   ( cd "$CORE_DIR/demo-orchestrator" && ./start.sh demo ) >"$LOG_DIR/orchestrator.log" 2>&1 &
@@ -41,17 +59,17 @@ else
   echo "[!] demo-orchestrator/start.sh not found; continuing anyway."
 fi
 
-# 3) Buscar un frontend Vite válido (si hay) y servirlo en preview
-VITE_DIR="$(find "$CORE_DIR" -type f -name 'vite.config.*' -printf '%h\n' | head -n1 || true)"
-if [[ -n "$VITE_DIR" && -d "$VITE_DIR" ]]; then
-  echo "[*] Building frontend at $VITE_DIR ..."
-  pnpm -C "$VITE_DIR" build || pnpm -C "$VITE_DIR" vite build
+# 4) Find a valid Vite frontend (if any) and serve it in preview
+# The main project is in the core directory with package.json
+if [[ -f "$CORE_DIR/package.json" ]]; then
+  echo "[*] Building frontend at $CORE_DIR ..."
+  pnpm -C "$CORE_DIR" build
   echo "[*] Preview on http://localhost:$PORT ..."
-  ( cd "$VITE_DIR" && pnpm preview --host --port "$PORT" ) >"$LOG_DIR/vite-preview.log" 2>&1 &
+  ( cd "$CORE_DIR" && pnpm preview --host --port "$PORT" ) >"$LOG_DIR/vite-preview.log" 2>&1 &
   echo $! > "$WORK_DIR/vite-preview.pid"
   echo "✅ UI at http://localhost:$PORT"
 else
-  echo "[!] No Vite project found. The demo may expose its UI from the orchestrator or another service."
+  echo "[!] No package.json found in core directory. The demo may expose its UI from the orchestrator or another service."
 fi
 
 echo "Logs at: $LOG_DIR"
